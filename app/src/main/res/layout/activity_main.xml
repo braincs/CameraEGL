@@ -29,6 +29,7 @@
         android:layout_toRightOf="@+id/btnMirror"/>
 
     <com.attrsc.braincs.cameraview.CameraEGLView
+        android:id="@+id/cameraEglView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         app:camera_id="0"/>

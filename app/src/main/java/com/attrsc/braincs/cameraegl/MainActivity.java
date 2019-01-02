@@ -1,6 +1,9 @@
 package com.attrsc.braincs.cameraegl;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.hardware.Camera;
+import android.os.Build;
 import android.os.Environment;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -14,7 +17,7 @@ import com.attrsc.braincs.cameraview.CameraEGLView;
 import java.io.File;
 
 public class MainActivity extends AppCompatActivity {
-
+    private static final int REQUEST_CAMERA = 1000;
     private CameraEGLView cameraView;
     private File mFile;
 
@@ -26,12 +29,26 @@ public class MainActivity extends AppCompatActivity {
         cameraView.setVideoSize(1280,960);
 //        cameraView.setVideoSize(640,480);
         cameraView.setCameraPreviewCallBack(cameraPreviewCallback);
+
+        // path to save your recorded video
         String path = Environment.getExternalStorageDirectory() + File.separator + "TestRecording";
         File parent = new File(path);
         if (!parent.exists()){
             parent.mkdirs();
         }
+
+        //file of recorded video
         mFile = new File(Environment.getExternalStorageDirectory() + File.separator + "TestRecording", "test.mp4");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{Manifest.permission.CAMERA}, REQUEST_CAMERA);
+                return;
+            }
+            if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED){
+                requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_CAMERA+1);
+                return;
+            }
+        }
     }
 
     Camera.PreviewCallback cameraPreviewCallback = new Camera.PreviewCallback() {
