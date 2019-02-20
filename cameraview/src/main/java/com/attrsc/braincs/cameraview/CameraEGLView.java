@@ -3,6 +3,7 @@ package com.attrsc.braincs.cameraview;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.ImageFormat;
+import android.graphics.PointF;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.opengl.EGL14;
@@ -28,6 +29,8 @@ import com.attrsc.braincs.cameraview.utils.CameraUtil;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 
 /**
@@ -46,11 +49,14 @@ public class CameraEGLView extends SurfaceView implements
     private int ROTATE_DEGREE;
     private int VIDEO_WIDTH = -1;  // dimensions for 720p video
     private int VIDEO_HEIGHT = -1;
+    private int SURFACE_WIDTH = -1;
+    private int SURFACE_HEIGHT = -1;
     private FullFrameRect mFullFrameBlit;
     private int mTextureId;
     private SurfaceTexture mCameraTexture;
     private final float[] mTmpMatrix = new float[16];
     private Camera.PreviewCallback cameraPreviewCallBack;
+    private CameraInitCallback cameraInitCallback;
     private boolean isMirror = false;
 
     // TODO consider this is static so it survives activity restarts
@@ -63,6 +69,15 @@ public class CameraEGLView extends SurfaceView implements
     private Sprite2d mPoint;
     private float[] mDisplayProjectionMatrix = new float[16];
     private FlatShadedProgram mPlainProgram;
+
+
+    // points drawing
+    private List<Sprite2d> points;
+
+
+    private int rotation = 270;
+    private final Object sync = new Object();
+    private volatile boolean isShowPoints = false;
 
     public CameraEGLView(Context context) {
         super(context);
@@ -108,23 +123,26 @@ public class CameraEGLView extends SurfaceView implements
         mCameraTexture = new SurfaceTexture(mTextureId);
         mCameraTexture.setOnFrameAvailableListener(this);
 
-        mPoint = new Sprite2d(mPointDrawable);
-        mPoint.setColor(1.0f,1.0f,1.0f);
-        mPoint.setScale(10 * 2f, 10 * 2f);
-        mPoint.setPosition(100f, 100f);
+//        mPoint = new Sprite2d(mPointDrawable);
+//        mPoint.setColor(1.0f, 1.0f, 1.0f);
+//        mPoint.setScale(10 * 2f, 10 * 2f);
+//        mPoint.setPosition(100f, 100f);
 
         mPlainProgram = new FlatShadedProgram();
 
         //set camera width and height
-        if (VIDEO_WIDTH < 0 && VIDEO_HEIGHT < 0) {
+        if (SURFACE_WIDTH < 0 && SURFACE_HEIGHT < 0) {
             //use default display size for video size
-            VIDEO_WIDTH = this.getWidth();
-            VIDEO_HEIGHT = this.getHeight();
+            SURFACE_WIDTH = this.getWidth();
+            SURFACE_HEIGHT = this.getHeight();
         }
 //        Log.d(TAG, "width = " + this.getWidth() + ", height = " + this.getHeight());
 //        mVideoEncoder.setTextureId(mTextureId);
         openConfigCamera(mCameraID);
         startPreview();
+        if (cameraInitCallback != null){
+            cameraInitCallback.onSuccess();
+        }
     }
 
     @Override
@@ -202,7 +220,18 @@ public class CameraEGLView extends SurfaceView implements
         }
         mFullFrameBlit.drawFrame(mTextureId, mTmpMatrix, m);
 //        drawExtra(mFrameNum, viewWidth, viewHeight);
-        mPoint.draw(mPlainProgram, mDisplayProjectionMatrix);
+//        mPoint.draw(mPlainProgram, mDisplayProjectionMatrix);
+
+        //draw points
+        if (isShowPoints) {
+            synchronized (sync) {
+                if (null != points && points.size() > 0) {
+                    for (Sprite2d p : points) {
+                        p.draw(mPlainProgram, mDisplayProjectionMatrix);
+                    }
+                }
+            }
+        }
 
         mEGLCore.swapBuffers(mEGLSurface);
 
@@ -242,6 +271,7 @@ public class CameraEGLView extends SurfaceView implements
     private void drawPoint(){
         mPoint.draw(mPlainProgram, mDisplayProjectionMatrix);
     }
+
     public boolean isMirror() {
         return isMirror;
     }
@@ -333,19 +363,19 @@ public class CameraEGLView extends SurfaceView implements
         parameters.setPictureSize(pictureSize.width, pictureSize.height);
 
 
-        int degree = CameraUtil.getCorrectCameraRotation(mContext, mCameraID);
-        if (CameraUtil.isFacingFront(mCameraID)){
+        rotation = CameraUtil.getCorrectCameraRotation(mContext, mCameraID);
+        if (CameraUtil.isFacingFront(mCameraID)) {
             isMirror = true;
         }
-        Log.d(TAG, "degree = " + degree);
-        if (degree == Surface.ROTATION_0 || degree == Surface.ROTATION_180) {
+        Log.d(TAG, "degree = " + rotation);
+        if (rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180) {
             VIDEO_WIDTH = closestSize.width;
             VIDEO_HEIGHT = closestSize.height;
         } else {
             VIDEO_WIDTH = closestSize.height;
             VIDEO_HEIGHT = closestSize.width;
         }
-        mCamera.setDisplayOrientation(degree);
+        mCamera.setDisplayOrientation(rotation);
 
         mCamera.setParameters(parameters);
 
@@ -365,11 +395,17 @@ public class CameraEGLView extends SurfaceView implements
 
     }
 
+    public int getCameraRotation() {
+        return rotation;
+    }
 
     public void setCameraPreviewCallBack(Camera.PreviewCallback previewCallBack) {
         this.cameraPreviewCallBack = previewCallBack;
     }
 
+    public void setCameraSuccessCallback(CameraInitCallback callback){
+        cameraInitCallback = callback;
+    }
     /**
      * Stops camera preview, and releases the camera to the system.
      */
@@ -385,5 +421,54 @@ public class CameraEGLView extends SurfaceView implements
     }
     //endregion
 
+
+    public boolean isShowPoints() {
+        return isShowPoints;
+    }
+
+    public void setShowPoints(boolean showPoints) {
+        isShowPoints = showPoints;
+    }
+
+    public void updatePoints(List<PointF> ps) {
+//        if (null == ps || ps.isEmpty()){
+//            isShow = false;
+//        }else {
+            synchronized (sync) {
+                if (null == ps){
+                    Log.d(TAG, "empty");
+                        if (points == null) return;//fixme
+                    for (int i = 0; i < points.size(); i++)
+                        points.get(i).setPosition(0 , 0);
+                    return;
+                }
+
+                if (points == null || points.size() != ps.size()) { //init points
+                    //create points
+                    points = new ArrayList<>();
+                    for (PointF p : ps) {
+                        Sprite2d point = new Sprite2d(mPointDrawable);
+                        point.setColor(0, 1, 1);
+                        point.setScale(10f, 10f);
+                        point.setPosition(p.x * SURFACE_WIDTH, p.y * SURFACE_HEIGHT);
+
+                        points.add(point);
+                    }
+
+                } else {
+                    //update points
+                    for (int i = 0; i < points.size(); i++) {
+//                    ps.get(i).x = ps.get(i).x  * SURFACE_WIDTH;
+//                    ps.get(i).y = ps.get(i).y  * SURFACE_HEIGHT;
+                        points.get(i).setPosition(ps.get(i).x * SURFACE_WIDTH, ps.get(i).y * SURFACE_HEIGHT);
+                    }
+                }
+            }
+
+    }
+
+    public interface CameraInitCallback{
+        void onSuccess();
+    }
 
 }

@@ -32,5 +32,5 @@
         android:id="@+id/cameraEglView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        app:camera_id="0"/>
+        app:camera_id="1"/>
 </RelativeLayout>
